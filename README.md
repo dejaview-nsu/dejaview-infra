@@ -1,26 +1,31 @@
 # dejaview-infra
 
-Инфраструктура DejaView: контейнеризация, CI/CD, деплой и окружения.
+Локальное окружение, CI и развёртывание.
 
 ## Зона ответственности
 
-- Docker и docker-compose для локальной разработки и продакшена
-- CI/CD: сборка, прогон тестов и линтеров, автоматический деплой
-- Управление окружениями (dev / prod) и секретами
-- Мониторинг и логирование
+- `docker-compose`: PostgreSQL, Qdrant, backend, ML-сервис, frontend одной командой
+- Отдельный профиль запуска только инфраструктуры, без приложений
+- CI: сборка, тесты и проверки стиля на каждый Pull Request
+- Валидация `dejaview-docs/api/openapi.yaml` в CI
+- Окружения dev и prod, управление секретами
+- Развёртывание на рабочем сервере, мониторинг и логирование
 
 ## Стек
 
-Docker · GitHub Actions (CI/CD) · reverse proxy, S3-хранилище (по необходимости)
+- Docker, docker-compose
+- GitHub Actions
+- clang-format для C++, ESLint с Prettier для frontend, ruff или black для Python
 
 ## Ссылки
 
-- Проект: https://github.com/dejaview-nsu
-- Контракты API и соглашения команды: https://github.com/dejaview-nsu/dejaview-docs
+- Задачи и требования: https://ai.nsu.ru/projects/dejaview
+- Архитектура, контракты, соглашения: https://github.com/dejaview-nsu/dejaview-docs
+- Организация: https://github.com/dejaview-nsu
 
 ## Как работаем
 
-- Ветка от `main`: `feat/...`, `fix/...` (нейминг — в соглашениях)
-- Изменения только через Pull Request с ревью; прямой push в `main` закрыт
-
-Структура проекта появится вместе с командой.
+- Ветка от `main`: `feat/<номер задачи>-<кратко>`, нейминг в `conventions.md`
+- Изменения через Pull Request с ревью, прямой push в `main` закрыт
+- Ревьюер назначается автоматически по CODEOWNERS
+- Время трекается в Redmine, в задачу, а не в требование
