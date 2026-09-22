@@ -1,0 +1,164 @@
+name: dejaview
+
+services:
+  # Default mode: PostgreSQL, Qdrant, Minio, Redis.
+  postgres:
+    image: postgres:16.11
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dejaview}
+      POSTGRES_USER: ${POSTGRES_USER:-dejaview}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dejaview_local_only}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  qdrant:
+    image: qdrant/qdrant:v1.19.1
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-storage:/qdrant/storage
+
+  redis:
+    image: redis:7.4.11-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dejaview}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dejaview_local_only}
+    ports:
+      - "127.0.0.1:${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - curl
+        - -fsS
+        - http://127.0.0.1:9000/minio/health/ready
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+# One-time initialization container that creates "profile-photos" bucket.
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
+    restart: "no"
+    entrypoint: ["/bin/sh", "-ec"]
+    command: |
+      until mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"; do
+        sleep 2
+      done
+      mc mb --ignore-existing local/profile-photos
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dejaview}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dejaview_local_only}
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  # Application profile: infrastructure and application containers.
+  backend:
+    profiles: [app]
+    build:
+      context: ../dejaview-backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ${POSTGRES_DB:-dejaview}
+      POSTGRES_USER: ${POSTGRES_USER:-dejaview}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dejaview_local_only}
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-dejaview}:${POSTGRES_PASSWORD:-dejaview_local_only}@postgres:5432/${POSTGRES_DB:-dejaview}
+      QDRANT_URL: http://qdrant:6333
+      REDIS_URL: redis://redis:6379/0
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dejaview}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dejaview_local_only}
+      MINIO_BUCKET: profile-photos
+      INFERENCE_URL: ${INFERENCE_URL:-http://ml:8000}
+      PORT: ${BACKEND_PORT:-8081}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:${BACKEND_PORT:-8081}:8081"        
+
+  frontend:
+    profiles: [app]
+    build:
+      context: ../dejaview-frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+
+    environment:
+      VITE_API_BASE_URL: /api/v1
+      VITE_SMARTCAPTCHA_SITEKEY: ${VITE_SMARTCAPTCHA_SITEKEY:-}
+
+    ports:
+      - "127.0.0.1:${FRONTEND_PORT:-5173}:5173"
+
+  # Optional GPU-only inference; activate together with app profile.
+  ml:
+    profiles: [ml]
+    build:
+      context: ../dejaview-ml
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      INFERENCE_PORT: "8000"
+      MODELS_DIR: /models
+      HF_HOME: /models/huggingface
+      CUDA_VISIBLE_DEVICES: "0"
+      QDRANT_URL: http://qdrant:6333
+    volumes:
+      - ml-models:/models
+    depends_on:
+      qdrant:
+        condition: service_started
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  pg-data:
+  qdrant-storage:
+  redis-data:
+  minio-data:
+  ml-models:
