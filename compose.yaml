@@ -4,7 +4,7 @@ services:
   # Infrastructure profile: PostgreSQL, Qdrant, MinIO.
   postgres:
     profiles: [infra]
-    image: postgres:16.11
+    image: postgres:${POSTGRES_TAG:-16.11}
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-dejaview}
@@ -14,6 +14,8 @@ services:
       - "127.0.0.1:${POSTGRES_PORT:-57432}:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
+    networks:
+      - dejaview-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 10s
@@ -23,16 +25,25 @@ services:
 
   qdrant:
     profiles: [infra]
-    image: qdrant/qdrant:v1.19.1
+    image: qdrant/qdrant:${QDRANT_TAG:-v1.19.1}
     restart: unless-stopped
     ports:
       - "127.0.0.1:${QDRANT_PORT:-57433}:6333"
     volumes:
       - qdrant-storage:/qdrant/storage
+    networks:
+      - dejaview-network
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - bash -c ':> /dev/tcp/127.0.0.1/6333' || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 3
 
   minio:
     profiles: [infra]
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio:${MINIO_TAG:-RELEASE.2025-09-07T16-13-09Z}
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -43,6 +54,8 @@ services:
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-57435}:9001"
     volumes:
       - minio-data:/data
+    networks:
+      - dejaview-network
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://127.0.0.1:9000/minio/health/ready"]
       interval: 10s
@@ -50,39 +63,47 @@ services:
       retries: 5
       start_period: 15s
 
-  # One-time initialization container that creates "profile-photos" bucket.
+  # One-time initialization container that creates the configured MinIO bucket.
   minio-init:
     profiles: [infra]
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: quay.io/minio/mc:${MINIO_MC_TAG:-RELEASE.2025-08-13T08-35-41Z}
     restart: "no"
     entrypoint:
       - /bin/sh
       - -ec
       - |
         mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
-        mc mb --ignore-existing local/profile-photos
+        mc mb --ignore-existing "local/$$MINIO_BUCKET"
     environment:
+      MINIO_BUCKET: ${MINIO_BUCKET:-profile-photos}
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dejaview}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dejaview_local_only}
     depends_on:
       minio:
         condition: service_healthy
+    networks:
+      - dejaview-network
 
 
   # Application profile: infrastructure and application containers.
   db-migrate:
     profiles: [ app ]
-    image: ghcr.io/amacneil/dbmate:2.36.0
+    image: ghcr.io/amacneil/dbmate:${DBMATE_TAG:-2.36.0}
     restart: "no"
     command: [ "--wait", "--no-dump-schema", "up" ]
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-dejaview}:${POSTGRES_PASSWORD:-dejaview_local_only}@postgres:5432/${POSTGRES_DB:-dejaview}?sslmode=disable
       DBMATE_MIGRATIONS_DIR: /db/migrations
     volumes:
-      - ../dejaview-backend/db/migrations:/db/migrations:ro
+      - type: bind
+        source: ${BACKEND_MIGRATIONS_DIR:-../dejaview-backend/db/migrations}
+        target: /db/migrations
+        read_only: true
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - dejaview-network
 
 
   backend:
@@ -95,11 +116,11 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-dejaview}
       POSTGRES_USER: ${POSTGRES_USER:-dejaview}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dejaview_local_only}
-      POSTGRES_URL: postgresql://${POSTGRES_USER:-dejaview}:${POSTGRES_PASSWORD:-dejaview_local_only}@postgres:5432/${POSTGRES_DB:-dejaview}
+      POSTGRES_URL: postgresql://${POSTGRES_USER:-dejaview}:${POSTGRES_PASSWORD:-dejaview_local_only}@postgres:5432/${POSTGRES_DB:-dejaview}?sslmode=disable
       MINIO_ENDPOINT: minio:9000
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dejaview}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dejaview_local_only}
-      MINIO_BUCKET: profile-photos
+      MINIO_BUCKET: ${MINIO_BUCKET:-profile-photos}
       INFERENCE_URL: ${INFERENCE_URL:-http://ml:8000}
       PORT: "8081"
     depends_on:
@@ -107,20 +128,23 @@ services:
         condition: service_healthy
       db-migrate:
         condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "127.0.0.1:${BACKEND_PORT:-57436}:8081"
+    networks:
+      - dejaview-network
 
   frontend:
     profiles: [app]
     image: ghcr.io/dejaview-nsu/dejaview-frontend:${FRONTEND_TAG:-latest}
     restart: unless-stopped
-
-    environment:
-      VITE_API_BASE_URL: /api/v1
-      VITE_SMARTCAPTCHA_SITEKEY: ${VITE_SMARTCAPTCHA_SITEKEY:-}
-
     ports:
       - "127.0.0.1:${FRONTEND_PORT:-57437}:5173"
+    networks:
+      - dejaview-network
 
   # Optional GPU-only inference; activate together with app profile.
   ml:
@@ -137,7 +161,7 @@ services:
       - ml-models:/models
     depends_on:
       qdrant:
-        condition: service_started
+        condition: service_healthy
     deploy:
       resources:
         reservations:
@@ -145,6 +169,8 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    networks:
+      - dejaview-network
 
 volumes:
   pg-data:
@@ -152,3 +178,6 @@ volumes:
   minio-data:
   ml-models:
 
+networks:
+  dejaview-network:
+    driver: bridge

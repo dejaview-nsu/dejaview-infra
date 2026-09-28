@@ -49,8 +49,10 @@ docker compose --profile infra --profile app up -d
 ```
 
 Перед запуском backend миграции PostgreSQL автоматически применяются через
-`dbmate`. Для этого репозитории `dejaview-infra` и `dejaview-backend` должны
-находиться рядом в одной директории.
+`dbmate`. По умолчанию миграции берутся из
+`../dejaview-backend/db/migrations`, поэтому рекомендуется располагать
+`dejaview-infra` и `dejaview-backend` рядом. Путь к миграциям можно
+переопределить через `BACKEND_MIGRATIONS_DIR` в `.env`.
 
 Для запуска полного стека вместе с ML-сервисом:
 
