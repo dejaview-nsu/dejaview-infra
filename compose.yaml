@@ -123,6 +123,24 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-profile-photos}
       INFERENCE_URL: ${INFERENCE_URL:-http://ml:8000}
       PORT: "8081"
+      
+      APP_URL: ${APP_URL}
+      API_URL: ${API_URL:-}
+
+      SMTP_URL: ${SMTP_URL}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+
+      SMARTCAPTCHA_SERVER_KEY: ${SMARTCAPTCHA_SERVER_KEY:-}
+
+      OIDC_YANDEX_CLIENT_ID: ${OIDC_YANDEX_CLIENT_ID:-}
+      OIDC_YANDEX_CLIENT_SECRET: ${OIDC_YANDEX_CLIENT_SECRET:-}
+
+      OIDC_GOOGLE_CLIENT_ID: ${OIDC_GOOGLE_CLIENT_ID:-}
+      OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
+
+      OIDC_VK_CLIENT_ID: ${OIDC_VK_CLIENT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
