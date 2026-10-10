@@ -29,7 +29,7 @@ fi
 validate_tag() {
     local tag="$1"
 
-    if [[ ! "$tag" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
         echo "Error: invalid image tag: $tag"
         exit 1
     fi
@@ -96,7 +96,8 @@ echo "Checking application health..."
 BACKEND_ADDRESS="$("${COMPOSE[@]}" port backend 8081)"
 
 wait_for_health "backend" \
-    curl -fsS "http://${BACKEND_ADDRESS}/health"
+    curl -fsS --connect-timeout 2 --max-time 5 \
+    "http://${BACKEND_ADDRESS}/health"
 
 wait_for_health "ml" \
     "${COMPOSE[@]}" exec -T ml python -c \
