@@ -1,0 +1,283 @@
+name: Deploy dev
+
+run-name: >-
+  Deploy dev |
+  backend=${{ inputs.backend_tag }} |
+  frontend=${{ inputs.frontend_tag }} |
+  ml=${{ inputs.ml_tag }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      backend_tag:
+        description: "Backend image tag"
+        required: true
+        type: string
+
+      frontend_tag:
+        description: "Frontend image tag"
+        required: true
+        type: string
+
+      ml_tag:
+        description: "ML image tag"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: dejaview-dev-deployment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to dev server
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    environment:
+      name: dev
+
+    env:
+      BACKEND_TAG: ${{ inputs.backend_tag }}
+      FRONTEND_TAG: ${{ inputs.frontend_tag }}
+      ML_TAG: ${{ inputs.ml_tag }}
+
+      DEV_HOST: ${{ vars.DEV_HOST }}
+      DEV_USER: ${{ vars.DEV_USER }}
+      DEV_SSH_PORT: ${{ vars.DEV_SSH_PORT }}
+      DEV_DEPLOY_DIR: ${{ vars.DEV_DEPLOY_DIR }}
+
+    steps:
+      - name: Checkout infra repository
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          if [[ "$GITHUB_REF" != "refs/heads/main" ]]; then
+              echo "Error: dev deployment must be started from the main branch"
+              exit 1
+          fi
+
+          validate_tag() {
+              local name="$1"
+              local tag="$2"
+
+              if [[ ! "$tag" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]; then
+                  echo "Error: invalid $name image tag: $tag"
+                  exit 1
+              fi
+
+              if [[ "$tag" == "latest" ]]; then
+                  echo "Error: 'latest' cannot be used for deployment"
+                  exit 1
+              fi
+          }
+
+          validate_tag "backend" "$BACKEND_TAG"
+          validate_tag "frontend" "$FRONTEND_TAG"
+          validate_tag "ml" "$ML_TAG"
+
+          if [[ -z "$DEV_HOST" ]]; then
+              echo "Error: DEV_HOST is not configured"
+              exit 1
+          fi
+
+          if [[ -z "$DEV_USER" ]]; then
+              echo "Error: DEV_USER is not configured"
+              exit 1
+          fi
+
+          if [[ -z "$DEV_DEPLOY_DIR" ]]; then
+              echo "Error: DEV_DEPLOY_DIR is not configured"
+              exit 1
+          fi
+
+          if [[ ! "$DEV_HOST" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+              echo "Error: DEV_HOST contains unsupported characters"
+              exit 1
+          fi
+
+          if [[ ! "$DEV_USER" =~ ^[A-Za-z0-9._-]+$ ]]; then
+              echo "Error: DEV_USER contains unsupported characters"
+              exit 1
+          fi
+
+          if [[ ! "$DEV_DEPLOY_DIR" =~ ^/[A-Za-z0-9._/-]+$ ]]; then
+              echo "Error: DEV_DEPLOY_DIR must be an absolute path without spaces"
+              exit 1
+          fi
+
+          SSH_PORT="${DEV_SSH_PORT:-22}"
+
+          if [[ ! "$SSH_PORT" =~ ^[0-9]+$ ]] ||
+             (( SSH_PORT < 1 || SSH_PORT > 65535 )); then
+              echo "Error: invalid DEV_SSH_PORT: $SSH_PORT"
+              exit 1
+          fi
+
+          echo "SSH_PORT=$SSH_PORT" >> "$GITHUB_ENV"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEV_SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.DEV_SSH_KNOWN_HOSTS }}
+        run: |
+          set -Eeuo pipefail
+
+          if [[ -z "$SSH_PRIVATE_KEY" ]]; then
+              echo "Error: DEV_SSH_PRIVATE_KEY is not configured"
+              exit 1
+          fi
+
+          if [[ -z "$SSH_KNOWN_HOSTS" ]]; then
+              echo "Error: DEV_SSH_KNOWN_HOSTS is not configured"
+              exit 1
+          fi
+          
+          mkdir -p "$HOME/.ssh"
+          chmod 700 "$HOME/.ssh"
+
+          printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          chmod 600 "$HOME/.ssh/deploy_key"
+
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/known_hosts"
+
+          cat > "$HOME/.ssh/config" <<EOF
+          Host dejaview-dev
+              HostName $DEV_HOST
+              User $DEV_USER
+              Port $SSH_PORT
+              IdentityFile $HOME/.ssh/deploy_key
+              IdentitiesOnly yes
+              BatchMode yes
+              PreferredAuthentications publickey
+              StrictHostKeyChecking yes
+              UserKnownHostsFile $HOME/.ssh/known_hosts
+              ConnectTimeout 10
+              ServerAliveInterval 15
+              ServerAliveCountMax 3
+          EOF
+
+          chmod 600 "$HOME/.ssh/config"
+
+      - name: Check dev server
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          ssh dejaview-dev "bash -s -- '$DEV_DEPLOY_DIR'" <<'REMOTE'
+          set -Eeuo pipefail
+
+          DEPLOY_DIR="$1"
+
+          command -v docker >/dev/null || {
+              echo "Error: docker is not installed on the dev server"
+              exit 1
+          }
+
+          docker compose version >/dev/null || {
+              echo "Error: Docker Compose plugin is not available"
+              exit 1
+          }
+
+          docker info >/dev/null 2>&1 || {
+              echo "Error: deploy user cannot access Docker"
+              exit 1
+          }
+
+          command -v curl >/dev/null || {
+              echo "Error: curl is not installed on the dev server"
+              exit 1
+          }
+
+          command -v tar >/dev/null || {
+              echo "Error: tar is not installed on the dev server"
+              exit 1
+          }
+
+          mkdir -p "$DEPLOY_DIR"
+
+          if [[ ! -f "$DEPLOY_DIR/.env" ]]; then
+              echo "Error: $DEPLOY_DIR/.env does not exist"
+              exit 1
+          fi
+
+          echo "Dev server prerequisites are satisfied"
+          REMOTE
+
+      - name: Upload deployment files
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          tar -czf - \
+              compose.yaml \
+              scripts \
+          | ssh dejaview-dev \
+              "tar -xzf - -C '$DEV_DEPLOY_DIR'"
+
+          ssh dejaview-dev \
+              "chmod +x \
+              '$DEV_DEPLOY_DIR/scripts/deploy.sh' \
+              '$DEV_DEPLOY_DIR/scripts/rollback.sh'"
+
+      - name: Login to GHCR
+        shell: bash
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -Eeuo pipefail
+
+          DOCKER_CONFIG_DIR="$DEV_DEPLOY_DIR/.deploy/.docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          printf '%s' "$GHCR_TOKEN" \
+          | ssh dejaview-dev \
+              "mkdir -p '$DOCKER_CONFIG_DIR' && \
+               chmod 700 '$DOCKER_CONFIG_DIR' && \
+               DOCKER_CONFIG='$DOCKER_CONFIG_DIR' \
+               docker login ghcr.io \
+                   --username '$GHCR_USER' \
+                   --password-stdin"
+
+      - name: Deploy application
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          DOCKER_CONFIG_DIR="$DEV_DEPLOY_DIR/.deploy/.docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          ssh dejaview-dev \
+              "cd '$DEV_DEPLOY_DIR' && \
+               DOCKER_CONFIG='$DOCKER_CONFIG_DIR' \
+               ./scripts/deploy.sh \
+                   '$BACKEND_TAG' \
+                   '$FRONTEND_TAG' \
+                   '$ML_TAG'"
+
+      - name: Remove temporary GHCR credentials
+        if: always()
+        shell: bash
+        run: |
+          set +e
+
+          if [[ -f "$HOME/.ssh/config" ]]; then
+              DOCKER_CONFIG_DIR="$DEV_DEPLOY_DIR/.deploy/.docker-auth-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+              ssh dejaview-dev \
+                  "rm -rf '$DOCKER_CONFIG_DIR'" \
+                  >/dev/null 2>&1 || true
+          fi

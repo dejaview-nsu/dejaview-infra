@@ -48,11 +48,8 @@ docker compose --profile infra up -d
 docker compose --profile infra --profile app up -d
 ```
 
-Перед запуском backend миграции PostgreSQL автоматически применяются через
-`dbmate`. По умолчанию миграции берутся из
-`../dejaview-backend/db/migrations`, поэтому рекомендуется располагать
-`dejaview-infra` и `dejaview-backend` рядом. Путь к миграциям можно
-переопределить через `BACKEND_MIGRATIONS_DIR` в `.env`.
+Миграции PostgreSQL входят в backend image и автоматически применяются
+backend при старте контейнера. Отдельный сервис для применения миграций в Docker Compose не используется.
 
 Для запуска полного стека вместе с ML-сервисом:
 
@@ -82,3 +79,48 @@ docker compose logs -f backend
 
 Данные PostgreSQL, Qdrant и MinIO хранятся в Docker volumes и сохраняются после
 обычного `docker compose down`.
+
+## Dev-сервер
+
+На dev-сервере должен быть подготовлен `.env` на основе `.env.example`.
+
+Для деплоя:
+
+```bash
+./scripts/deploy.sh <backend-tag> <frontend-tag> <ml-tag>
+```
+
+Тег `latest` не используется.
+
+Для отката на предыдущий успешный релиз:
+
+```bash
+./scripts/rollback.sh
+```
+
+Информация о текущем и предыдущем релизах хранится в:
+
+```text
+.deploy/current.env
+.deploy/previous.env
+```
+
+Деплой и откат также запускаются вручную через GitHub Actions.
+
+Для GitHub Environment `dev` должны быть настроены variables:
+
+```text
+DEV_HOST
+DEV_USER
+DEV_SSH_PORT
+DEV_DEPLOY_DIR
+```
+
+и secrets:
+
+```text
+DEV_SSH_PRIVATE_KEY
+DEV_SSH_KNOWN_HOSTS
+```
+
+Перед первым запуском на сервере должны быть настроены Docker, Docker Compose, nginx, TLS и доступ к GHCR.

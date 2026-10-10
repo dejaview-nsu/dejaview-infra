@@ -84,28 +84,7 @@ services:
     networks:
       - dejaview-network
 
-
   # Application profile: infrastructure and application containers.
-  db-migrate:
-    profiles: [ app ]
-    image: ghcr.io/amacneil/dbmate:${DBMATE_TAG:-2.36.0}
-    restart: "no"
-    command: [ "--wait", "--no-dump-schema", "up" ]
-    environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-dejaview}:${POSTGRES_PASSWORD:-dejaview_local_only}@postgres:5432/${POSTGRES_DB:-dejaview}?sslmode=disable
-      DBMATE_MIGRATIONS_DIR: /db/migrations
-    volumes:
-      - type: bind
-        source: ${BACKEND_MIGRATIONS_DIR:-../dejaview-backend/db/migrations}
-        target: /db/migrations
-        read_only: true
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - dejaview-network
-
-
   backend:
     profiles: [app]
     image: ghcr.io/dejaview-nsu/dejaview-backend:${BACKEND_TAG:-latest}
@@ -123,11 +102,27 @@ services:
       MINIO_BUCKET: ${MINIO_BUCKET:-profile-photos}
       INFERENCE_URL: ${INFERENCE_URL:-http://ml:8000}
       PORT: "8081"
+      
+      APP_URL: ${APP_URL}
+      API_URL: ${API_URL:-}
+
+      SMTP_URL: ${SMTP_URL}
+      SMTP_FROM: ${SMTP_FROM}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+
+      SMARTCAPTCHA_SERVER_KEY: ${SMARTCAPTCHA_SERVER_KEY:-}
+
+      OIDC_YANDEX_CLIENT_ID: ${OIDC_YANDEX_CLIENT_ID:-}
+      OIDC_YANDEX_CLIENT_SECRET: ${OIDC_YANDEX_CLIENT_SECRET:-}
+
+      OIDC_GOOGLE_CLIENT_ID: ${OIDC_GOOGLE_CLIENT_ID:-}
+      OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
+
+      OIDC_VK_CLIENT_ID: ${OIDC_VK_CLIENT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
-      db-migrate:
-        condition: service_completed_successfully
       minio:
         condition: service_healthy
       minio-init:
