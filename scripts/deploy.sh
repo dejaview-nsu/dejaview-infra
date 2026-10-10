@@ -84,9 +84,6 @@ echo "Starting infrastructure..."
 echo "Initializing MinIO..."
 "${COMPOSE[@]}" run --rm minio-init
 
-echo "Applying database migrations..."
-"${COMPOSE[@]}" run --rm db-migrate
-
 if [[ -f "$CURRENT_RELEASE_FILE" ]]; then
     cp "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
 fi
