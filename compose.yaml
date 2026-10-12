@@ -11,7 +11,7 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-dejaview}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dejaview_local_only}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-57432}:5432"
+      - "${POSTGRES_PORT:-57432}:5432"
     volumes:
       - pg-data:/var/lib/postgresql/data
     networks:
@@ -27,8 +27,10 @@ services:
     profiles: [infra]
     image: qdrant/qdrant:${QDRANT_TAG:-v1.19.1}
     restart: unless-stopped
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     ports:
-      - "127.0.0.1:${QDRANT_PORT:-57433}:6333"
+      - "${QDRANT_PORT:-57433}:6333"
     volumes:
       - qdrant-storage:/qdrant/storage
     networks:
@@ -50,8 +52,8 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-dejaview}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-dejaview_local_only}
     ports:
-      - "127.0.0.1:${MINIO_PORT:-57434}:9000"
-      - "127.0.0.1:${MINIO_CONSOLE_PORT:-57435}:9001"
+      - "${MINIO_PORT:-57434}:9000"
+      - "${MINIO_CONSOLE_PORT:-57435}:9001"
     volumes:
       - minio-data:/data
     networks:
