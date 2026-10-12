@@ -159,29 +159,21 @@ services:
     networks:
       - dejaview-network
 
-  # Optional GPU-only inference; activate together with app profile.
+  # Optional ML inference service; uses GPU when available, otherwise falls back to CPU.
   ml:
     profiles: [ml]
     image: ghcr.io/dejaview-nsu/dejaview-ml:${ML_TAG:-latest}
     restart: unless-stopped
     environment:
-      INFERENCE_PORT: "8000"
-      MODELS_DIR: /models
-      HF_HOME: /models/huggingface
-      CUDA_VISIBLE_DEVICES: "0"
-      QDRANT_URL: http://qdrant:6333
+      ML_DEVICE: auto
+      ML_CACHE_DIR: /models/huggingface
+      ML_QDRANT_URL: http://qdrant:6333
+      ML_QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
     volumes:
       - ml-models:/models
     depends_on:
       qdrant:
         condition: service_healthy
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
     networks:
       - dejaview-network
 
