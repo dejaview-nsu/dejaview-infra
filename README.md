@@ -57,7 +57,7 @@ backend при старте контейнера. Отдельный серви�
 docker compose --profile infra --profile app --profile ml up -d
 ```
 
-ML-сервис требует NVIDIA GPU с настроенной поддержкой GPU в Docker.
+ML-сервис использует GPU при наличии, иначе работает на CPU.
 
 Остановить окружение:
 
@@ -83,6 +83,12 @@ docker compose logs -f backend
 ## Dev-сервер
 
 На dev-сервере должен быть подготовлен `.env` на основе `.env.example`.
+
+`QDRANT_API_KEY` обязателен и должен быть задан в `.env`.
+
+DNS `dev.deja-view.ru` должен указывать на dev-сервер, порты 80 и 443 должны быть открыты.
+При первом деплое `deploy.sh` автоматически получает TLS-сертификат Let's Encrypt через Certbot.
+Дальнейшее продление сертификата выполняется автоматически.
 
 Для деплоя:
 
@@ -123,4 +129,4 @@ DEV_SSH_PRIVATE_KEY
 DEV_SSH_KNOWN_HOSTS
 ```
 
-Перед первым запуском на сервере должны быть настроены Docker, Docker Compose, nginx, TLS и доступ к GHCR.
+Перед первым запуском на сервере должны быть настроены Docker, Docker Compose, `.env`, DNS и доступ к GHCR.

@@ -21,6 +21,8 @@ STATE_DIR="$ROOT_DIR/.deploy"
 CURRENT_RELEASE_FILE="$STATE_DIR/current.env"
 PREVIOUS_RELEASE_FILE="$STATE_DIR/previous.env"
 
+TLS_DOMAIN="dev.deja-view.ru"
+
 if [[ ! -f "$ENV_FILE" ]]; then
     echo "Error: $ENV_FILE does not exist"
     exit 1
@@ -58,6 +60,33 @@ wait_for_health() {
     return 1
 }
 
+ensure_tls_certificate() {
+    if "${COMPOSE[@]}" run --rm --no-deps \
+        --entrypoint /bin/sh certbot \
+        -c "test -s /etc/letsencrypt/live/$TLS_DOMAIN/fullchain.pem && \
+            test -s /etc/letsencrypt/live/$TLS_DOMAIN/privkey.pem" \
+        >/dev/null 2>&1; then
+
+        echo "TLS certificate already exists"
+        return
+    fi
+
+    echo "TLS certificate not found. Requesting from Let's Encrypt..."
+
+    "${COMPOSE[@]}" stop nginx certbot >/dev/null 2>&1 || true
+
+    "${COMPOSE[@]}" run --rm --no-deps \
+        -p 80:80 \
+        --entrypoint certbot \
+        certbot \
+        certonly \
+        --standalone \
+        --non-interactive \
+        --agree-tos \
+        --register-unsafely-without-email \
+        -d "$TLS_DOMAIN"
+}
+
 validate_tag "$BACKEND_TAG"
 validate_tag "$FRONTEND_TAG"
 validate_tag "$ML_TAG"
@@ -84,9 +113,8 @@ echo "Starting infrastructure..."
 echo "Initializing MinIO..."
 "${COMPOSE[@]}" run --rm minio-init
 
-if [[ -f "$CURRENT_RELEASE_FILE" ]]; then
-    cp "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
-fi
+echo "Ensuring TLS certificate..."
+ensure_tls_certificate
 
 echo "Starting application..."
 "${COMPOSE[@]}" up -d --no-deps backend frontend ml
@@ -99,6 +127,9 @@ else
     "${COMPOSE[@]}" up -d nginx
 fi
 
+echo "Starting certificate renewal..."
+"${COMPOSE[@]}" up -d --no-deps certbot
+
 echo "Checking application health..."
 
 BACKEND_ADDRESS="$("${COMPOSE[@]}" port backend 8081)"
@@ -110,6 +141,14 @@ wait_for_health "backend" \
 wait_for_health "ml" \
     "${COMPOSE[@]}" exec -T ml python -c \
     'import urllib.request; assert urllib.request.urlopen("http://127.0.0.1:8000/health", timeout=5).status == 200'
+
+wait_for_health "frontend via HTTPS" \
+    curl -fsS --connect-timeout 2 --max-time 5 \
+    "https://${TLS_DOMAIN}/"
+
+if [[ -f "$CURRENT_RELEASE_FILE" ]]; then
+    cp "$CURRENT_RELEASE_FILE" "$PREVIOUS_RELEASE_FILE"
+fi
 
 cat > "$CURRENT_RELEASE_FILE" <<EOF
 BACKEND_TAG=$BACKEND_TAG
