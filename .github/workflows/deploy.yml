@@ -226,6 +226,7 @@ jobs:
           tar -czf - \
               compose.yaml \
               scripts \
+              nginx \
           | ssh dejaview-dev \
               "tar -xzf - -C '$DEV_DEPLOY_DIR'"
 

@@ -87,6 +87,14 @@ echo "Pulling previous application images..."
 echo "Rolling back application..."
 "${COMPOSE[@]}" up -d --no-deps backend frontend ml
 
+if "${COMPOSE[@]}" ps --status running --services | grep -qx nginx; then
+    echo "Restarting nginx..."
+    "${COMPOSE[@]}" restart nginx
+else
+    echo "Starting nginx..."
+    "${COMPOSE[@]}" up -d nginx
+fi
+
 echo "Checking application health..."
 
 BACKEND_ADDRESS="$("${COMPOSE[@]}" port backend 8081)"
