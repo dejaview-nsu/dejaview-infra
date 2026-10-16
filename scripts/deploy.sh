@@ -40,6 +40,36 @@ validate_tag() {
     fi
 }
 
+validate_app_environment() {
+    local compose_environment
+    local variable
+    local missing=false
+
+    if ! compose_environment="$("${COMPOSE[@]}" config --environment)"; then
+        echo "Error: failed to resolve Docker Compose environment"
+        return 1
+    fi
+
+    for variable in APP_URL SMTP_URL SMTP_FROM; do
+        if ! awk -v key="$variable" '
+            index($0, key "=") == 1 {
+                value = substr($0, length(key) + 2)
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+
+                if (length(value) > 0) {
+                    found = 1
+                }
+            }
+            END { exit !found }
+        ' <<< "$compose_environment"; then
+            echo "Error: $variable is required for the app profile"
+            missing=true
+        fi
+    done
+
+    [[ "$missing" == false ]]
+}
+
 set_release_tags() {
     BACKEND_TAG="$1"
     FRONTEND_TAG="$2"
@@ -330,6 +360,9 @@ COMPOSE=(
     --profile ml
     --profile tls
 )
+
+echo "Validating required application environment..."
+validate_app_environment
 
 echo "Validating compose configuration..."
 "${COMPOSE[@]}" config >/dev/null
