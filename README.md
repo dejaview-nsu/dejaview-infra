@@ -4,7 +4,7 @@
 
 ## Зона ответственности
 
-- `docker-compose`: PostgreSQL, Qdrant, backend, ML-сервис, frontend одной командой
+- `docker-compose`: PostgreSQL, Qdrant, MinIO, backend, frontend, ML-сервис, nginx и Certbot
 - Отдельный профиль запуска только инфраструктуры, без приложений
 - CI: сборка, тесты и проверки стиля на каждый Pull Request
 - Валидация `dejaview-docs/api/openapi.yaml` в CI
@@ -33,8 +33,11 @@
 ## Docker Compose
 
 Основная конфигурация локального окружения находится в `compose.yaml`.
-Все основные параметры имеют значения по умолчанию; при необходимости их можно
-переопределить через `.env` на основе `.env.example`.
+Большинство несекретных параметров имеют безопасные значения по умолчанию.
+Обязательные секреты и параметры приложения необходимо задать в `.env`
+на основе `.env.example`.
+Скрипты deploy и rollback перед запуском профиля `app` проверяют, что
+`APP_URL`, `SMTP_URL` и `SMTP_FROM` заданы и не пусты.
 
 Для запуска только инфраструктуры:
 
@@ -48,19 +51,20 @@ docker compose --profile infra up -d
 docker compose --profile infra --profile app up -d
 ```
 
-Перед запуском backend миграции PostgreSQL автоматически применяются через
-`dbmate`. По умолчанию миграции берутся из
-`../dejaview-backend/db/migrations`, поэтому рекомендуется располагать
-`dejaview-infra` и `dejaview-backend` рядом. Путь к миграциям можно
-переопределить через `BACKEND_MIGRATIONS_DIR` в `.env`.
+Профиль `app` предназначен для локального запуска backend и frontend.
+Nginx и Certbot вынесены в отдельный профиль `tls` и при обычном локальном
+запуске не поднимаются.
 
-Для запуска полного стека вместе с ML-сервисом:
+Миграции PostgreSQL входят в backend image и автоматически применяются
+backend при старте контейнера. Отдельный сервис для применения миграций в Docker Compose не используется.
+
+Для запуска полного локального стека вместе с ML-сервисом:
 
 ```bash
 docker compose --profile infra --profile app --profile ml up -d
 ```
 
-ML-сервис требует NVIDIA GPU с настроенной поддержкой GPU в Docker.
+ML-сервис использует GPU при наличии, иначе работает на CPU.
 
 Остановить окружение:
 
@@ -82,3 +86,76 @@ docker compose logs -f backend
 
 Данные PostgreSQL, Qdrant и MinIO хранятся в Docker volumes и сохраняются после
 обычного `docker compose down`.
+
+## Dev-сервер
+
+На dev-сервере должен быть подготовлен `.env` на основе `.env.example`.
+
+Для dev deployment в `.env` должны быть заданы обязательные значения:
+
+```text
+POSTGRES_PASSWORD
+QDRANT_API_KEY
+MINIO_ROOT_PASSWORD
+APP_URL
+SMTP_URL
+SMTP_FROM
+```
+
+DNS `dev.deja-view.ru` должен указывать на dev-сервер, порты 80 и 443 должны быть открыты.
+
+Nginx и Certbot на dev-сервере запускаются в отдельном профиле `tls`.
+При первом деплое `deploy.sh` временно запускает HTTP-only nginx из профиля
+`tls-bootstrap` и получает TLS-сертификат Let's Encrypt через Certbot с использованием
+webroot challenge. После получения сертификата bootstrap-контейнер удаляется и
+запускается основной nginx с HTTPS.
+
+Дальнейшее продление сертификата выполняется Certbot автоматически через тот же
+webroot-механизм без остановки nginx.
+
+Для деплоя:
+
+```bash
+./scripts/deploy.sh <backend-tag> <frontend-tag> <ml-tag>
+```
+
+Тег `latest` не используется.
+
+Для отката на предыдущий успешный релиз:
+
+```bash
+./scripts/rollback.sh
+```
+
+Информация о текущем и предыдущем релизах хранится в:
+
+```text
+.deploy/current.env
+.deploy/previous.env
+```
+
+State-файлы обновляются только после успешной проверки health-check. Если новый
+deploy не проходит проверку, runtime автоматически возвращается на последний
+успешный current release; при неудачном rollback восстанавливается release,
+который был current до отката. Повторный deploy тех же трёх тегов не изменяет
+`previous.env`.
+
+Деплой и откат также запускаются вручную через GitHub Actions.
+
+Для GitHub Environment `dev` должны быть настроены variables:
+
+```text
+DEV_HOST
+DEV_USER
+DEV_SSH_PORT
+DEV_DEPLOY_DIR
+```
+
+и secrets:
+
+```text
+DEV_SSH_PRIVATE_KEY
+DEV_SSH_KNOWN_HOSTS
+```
+
+Перед первым запуском на сервере должны быть настроены Docker, Docker Compose, `.env`, DNS и доступ к GHCR.
