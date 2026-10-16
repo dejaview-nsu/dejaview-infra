@@ -71,20 +71,54 @@ ensure_tls_certificate() {
         return
     fi
 
-    echo "TLS certificate not found. Requesting from Let's Encrypt..."
+    echo "TLS certificate not found. Starting bootstrap nginx..."
 
     "${COMPOSE[@]}" stop nginx certbot >/dev/null 2>&1 || true
 
-    "${COMPOSE[@]}" run --rm --no-deps \
-        -p 80:80 \
+    if ! "${COMPOSE[@]}" \
+        --profile tls-bootstrap \
+        up -d --wait nginx-bootstrap; then
+
+        cleanup_tls_bootstrap
+        echo "Error: failed to start bootstrap nginx"
+        return 1
+    fi
+
+    trap cleanup_tls_bootstrap EXIT INT TERM
+
+    echo "Requesting certificate from Let's Encrypt via webroot..."
+
+    if ! "${COMPOSE[@]}" \
+        --profile tls-bootstrap \
+        run --rm --no-deps \
         --entrypoint certbot \
         certbot \
         certonly \
-        --standalone \
+        --webroot \
+        --webroot-path /var/www/certbot \
         --non-interactive \
         --agree-tos \
         --register-unsafely-without-email \
-        -d "$TLS_DOMAIN"
+        -d "$TLS_DOMAIN"; then
+
+        cleanup_tls_bootstrap
+        trap - EXIT INT TERM
+
+        echo "Error: failed to obtain TLS certificate"
+        return 1
+    fi
+
+    cleanup_tls_bootstrap
+    trap - EXIT INT TERM
+
+    echo "TLS certificate obtained successfully"
+}
+
+cleanup_tls_bootstrap() {
+    "${COMPOSE[@]}" \
+        --profile tls-bootstrap \
+        rm -sf nginx-bootstrap \
+        >/dev/null 2>&1 || true
 }
 
 validate_tag "$BACKEND_TAG"
@@ -99,6 +133,7 @@ COMPOSE=(
     --profile infra
     --profile app
     --profile ml
+    --profile tls
 )
 
 echo "Validating compose configuration..."

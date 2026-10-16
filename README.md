@@ -4,7 +4,7 @@
 
 ## Зона ответственности
 
-- `docker-compose`: PostgreSQL, Qdrant, backend, ML-сервис, frontend одной командой
+- `docker-compose`: PostgreSQL, Qdrant, MinIO, backend, frontend, ML-сервис, nginx и Certbot
 - Отдельный профиль запуска только инфраструктуры, без приложений
 - CI: сборка, тесты и проверки стиля на каждый Pull Request
 - Валидация `dejaview-docs/api/openapi.yaml` в CI
@@ -48,10 +48,14 @@ docker compose --profile infra up -d
 docker compose --profile infra --profile app up -d
 ```
 
+Профиль `app` предназначен для локального запуска backend и frontend.
+Nginx и Certbot вынесены в отдельный профиль `tls` и при обычном локальном
+запуске не поднимаются.
+
 Миграции PostgreSQL входят в backend image и автоматически применяются
 backend при старте контейнера. Отдельный сервис для применения миграций в Docker Compose не используется.
 
-Для запуска полного стека вместе с ML-сервисом:
+Для запуска полного локального стека вместе с ML-сервисом:
 
 ```bash
 docker compose --profile infra --profile app --profile ml up -d
@@ -87,8 +91,15 @@ docker compose logs -f backend
 `QDRANT_API_KEY` обязателен и должен быть задан в `.env`.
 
 DNS `dev.deja-view.ru` должен указывать на dev-сервер, порты 80 и 443 должны быть открыты.
-При первом деплое `deploy.sh` автоматически получает TLS-сертификат Let's Encrypt через Certbot.
-Дальнейшее продление сертификата выполняется автоматически.
+
+Nginx и Certbot на dev-сервере запускаются в отдельном профиле `tls`.
+При первом деплое `deploy.sh` временно запускает HTTP-only nginx из профиля
+`tls-bootstrap` и получает TLS-сертификат Let's Encrypt через Certbot с использованием
+webroot challenge. После получения сертификата bootstrap-контейнер удаляется и
+запускается основной nginx с HTTPS.
+
+Дальнейшее продление сертификата выполняется Certbot автоматически через тот же
+webroot-механизм без остановки nginx.
 
 Для деплоя:
 
