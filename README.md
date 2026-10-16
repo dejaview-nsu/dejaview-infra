@@ -122,6 +122,12 @@ webroot-механизм без остановки nginx.
 .deploy/previous.env
 ```
 
+State-файлы обновляются только после успешной проверки health-check. Если новый
+deploy не проходит проверку, runtime автоматически возвращается на последний
+успешный current release; при неудачном rollback восстанавливается release,
+который был current до отката. Повторный deploy тех же трёх тегов не изменяет
+`previous.env`.
+
 Деплой и откат также запускаются вручную через GitHub Actions.
 
 Для GitHub Environment `dev` должны быть настроены variables:
