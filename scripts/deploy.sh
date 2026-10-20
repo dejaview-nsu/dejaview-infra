@@ -175,8 +175,12 @@ check_application_health() {
         || return 1
 
     wait_for_health "frontend via HTTPS" 60 \
-        curl -fsS --connect-timeout 2 --max-time 5 \
-        "https://${TLS_DOMAIN}/" || return 1
+        curl -fsS \
+            --connect-timeout 2 \
+            --max-time 5 \
+            --resolve "${TLS_DOMAIN}:443:127.0.0.1" \
+            "https://${TLS_DOMAIN}/" \
+        || return 1
 }
 
 restore_current_release() {
