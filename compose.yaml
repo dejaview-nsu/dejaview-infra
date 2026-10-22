@@ -45,7 +45,7 @@ services:
 
   minio:
     profiles: [infra]
-    image: quay.io/minio/minio:${MINIO_TAG:-RELEASE.2025-09-07T16-13-09Z}
+    image: docker.io/pgsty/silo:RELEASE.2026-10-18T00-00-00Z
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
@@ -68,7 +68,7 @@ services:
   # One-time initialization container that creates the configured MinIO bucket.
   minio-init:
     profiles: [infra]
-    image: quay.io/minio/mc:${MINIO_MC_TAG:-RELEASE.2025-08-13T08-35-41Z}
+    image: docker.io/pgsty/mc:RELEASE.2026-10-18T00-00-00Z
     restart: "no"
     entrypoint:
       - /bin/sh
