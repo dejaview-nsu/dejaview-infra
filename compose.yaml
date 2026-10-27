@@ -208,7 +208,7 @@ services:
     image: ghcr.io/dejaview-nsu/dejaview-ml:${ML_TAG:-latest}
     restart: unless-stopped
     environment:
-      ML_DEVICE: auto
+      ML_DEVICE: ${ML_DEVICE:-auto}
       ML_CACHE_DIR: /models/huggingface
       ML_QDRANT_URL: http://qdrant:6333
       ML_QDRANT_API_KEY: ${QDRANT_API_KEY:?QDRANT_API_KEY is required}
@@ -216,6 +216,12 @@ services:
       ML_VIDEO_ENABLED: ${ML_VIDEO_ENABLED:-true}
       ML_TEXT_ENABLED: ${ML_TEXT_ENABLED:-false}
       ML_AUDIO_ENABLED: ${ML_AUDIO_ENABLED:-false}
+      ML_TOP_K: ${ML_TOP_K:-20}
+      ML_SCORE_THRESHOLD: "${ML_SCORE_THRESHOLD:-}"
+      ML_SCORE_THRESHOLD_TEXT: "${ML_SCORE_THRESHOLD_TEXT:-}"
+      ML_SCORE_THRESHOLD_IMAGE: "${ML_SCORE_THRESHOLD_IMAGE:-}"
+      ML_SCORE_THRESHOLD_VIDEO: "${ML_SCORE_THRESHOLD_VIDEO:-}"
+      ML_SCORE_THRESHOLD_AUDIO: "${ML_SCORE_THRESHOLD_AUDIO:-}"
     volumes:
       - ml-models:/models
     depends_on:
