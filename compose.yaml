@@ -122,6 +122,8 @@ services:
       OIDC_GOOGLE_CLIENT_SECRET: ${OIDC_GOOGLE_CLIENT_SECRET:-}
 
       OIDC_VK_CLIENT_ID: ${OIDC_VK_CLIENT_ID:-}
+
+      TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:?TMDB_ACCESS_TOKEN is required}
     depends_on:
       postgres:
         condition: service_healthy
