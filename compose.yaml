@@ -135,6 +135,9 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-57436}:8081"
     networks:
       - dejaview-network
+    dns:
+      - 9.9.9.9
+      - 1.1.1.1
 
   frontend:
     profiles: [app]
