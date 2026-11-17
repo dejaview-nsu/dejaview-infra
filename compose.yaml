@@ -124,6 +124,8 @@ services:
       OIDC_VK_CLIENT_ID: ${OIDC_VK_CLIENT_ID:-}
 
       TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:?TMDB_ACCESS_TOKEN is required}
+
+      EMAIL_LINK_SHORTENER: ${EMAIL_LINK_SHORTENER:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -227,6 +229,8 @@ services:
       ML_SCORE_THRESHOLD_IMAGE: "${ML_SCORE_THRESHOLD_IMAGE:-}"
       ML_SCORE_THRESHOLD_VIDEO: "${ML_SCORE_THRESHOLD_VIDEO:-}"
       ML_SCORE_THRESHOLD_AUDIO: "${ML_SCORE_THRESHOLD_AUDIO:-}"
+      ML_SPEECH_ENABLED: ${ML_SPEECH_ENABLED:-false}
+      ML_SPEECH_LANGUAGE: ${ML_SPEECH_LANGUAGE:-ru}
     volumes:
       - ml-models:/models
     depends_on:
