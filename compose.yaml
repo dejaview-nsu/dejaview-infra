@@ -103,6 +103,18 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD is required}
       MINIO_BUCKET: ${MINIO_BUCKET:-profile-photos}
       ML_URL: ${ML_URL:-http://ml:8000}
+
+      # ML concurrency and timeouts
+      ML_MAX_CONCURRENT: "${ML_MAX_CONCURRENT:-4}"
+      ML_TEXT_TIMEOUT_MS: "${ML_TEXT_TIMEOUT_MS:-4000}"
+      ML_IMAGE_TIMEOUT_MS: "${ML_IMAGE_TIMEOUT_MS:-9000}"
+      ML_VIDEO_TIMEOUT_MS: "${ML_VIDEO_TIMEOUT_MS:-14000}"
+      ML_AUDIO_TIMEOUT_MS: "${ML_AUDIO_TIMEOUT_MS:-14000}"
+
+      # ML circuit breaker
+      ML_FAILURES_TO_OPEN: "${ML_FAILURES_TO_OPEN:-5}"
+      ML_OPEN_FOR_MS: "${ML_OPEN_FOR_MS:-30000}"
+
       PORT: "8081"
       
       APP_URL: ${APP_URL:-}
@@ -124,8 +136,6 @@ services:
       OIDC_VK_CLIENT_ID: ${OIDC_VK_CLIENT_ID:-}
 
       TMDB_ACCESS_TOKEN: ${TMDB_ACCESS_TOKEN:?TMDB_ACCESS_TOKEN is required}
-
-      EMAIL_LINK_SHORTENER: ${EMAIL_LINK_SHORTENER:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,9 +147,6 @@ services:
       - "127.0.0.1:${BACKEND_PORT:-57436}:8081"
     networks:
       - dejaview-network
-    dns:
-      - 9.9.9.9
-      - 1.1.1.1
 
   frontend:
     profiles: [app]
@@ -229,8 +236,21 @@ services:
       ML_SCORE_THRESHOLD_IMAGE: "${ML_SCORE_THRESHOLD_IMAGE:-}"
       ML_SCORE_THRESHOLD_VIDEO: "${ML_SCORE_THRESHOLD_VIDEO:-}"
       ML_SCORE_THRESHOLD_AUDIO: "${ML_SCORE_THRESHOLD_AUDIO:-}"
-      ML_SPEECH_ENABLED: ${ML_SPEECH_ENABLED:-false}
-      ML_SPEECH_LANGUAGE: ${ML_SPEECH_LANGUAGE:-ru}
+
+      # Speech recognition
+      ML_SPEECH_ENABLED: "${ML_SPEECH_ENABLED:-true}"
+      ML_SPEECH_LANGUAGE: "${ML_SPEECH_LANGUAGE:-ru}"
+
+      # Inference capacity
+      ML_INFERENCE_SLOTS: "${ML_INFERENCE_SLOTS:-6}"
+      ML_INFERENCE_QUEUE_LIMIT: "${ML_INFERENCE_QUEUE_LIMIT:-32}"
+      ML_INFERENCE_WAIT_SECONDS: "${ML_INFERENCE_WAIT_SECONDS:-5}"
+      ML_TORCH_THREADS: "${ML_TORCH_THREADS:-2}"
+
+      # Media processing timeouts
+      ML_FFMPEG_TIMEOUT_SECONDS: "${ML_FFMPEG_TIMEOUT_SECONDS:-10}"
+      ML_BODY_READ_TIMEOUT_SECONDS: "${ML_BODY_READ_TIMEOUT_SECONDS:-30}"
+
     volumes:
       - ml-models:/models
     depends_on:
